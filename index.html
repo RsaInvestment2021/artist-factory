@@ -27,6 +27,35 @@
 <section class="card"><h2>Artistas registados neste navegador</h2><div id="projects" class="muted">Ainda não existem registos.</div><button class="secondary" id="exportAll">Exportar lista de artistas</button></section>
 </main><div class="footer">Artist Factory · O CHETTCOME V12 original nunca é alterado. Cada geração cria uma cópia independente.</div>
 <script>
+(function(){
+ const setMsg=(m)=>{const el=document.getElementById('factoryAuthState');if(el)el.textContent=m;};
+ const login=document.getElementById('factoryLogin');
+ if(!login)return;
+ login.addEventListener('click',async function(ev){
+  ev.preventDefault(); login.disabled=true;setMsg('A preparar ligação segura ao Supabase…');
+  try{
+   if(!window.supabase||!window.supabase.createClient){
+    await new Promise((resolve,reject)=>{const sc=document.createElement('script');sc.src='https://unpkg.com/@supabase/supabase-js@2';sc.onload=resolve;sc.onerror=()=>reject(new Error('Não foi possível carregar a biblioteca Supabase. Verifica a ligação à internet ou bloqueio do navegador.'));document.head.appendChild(sc);});
+   }
+   if(!window.supabase||!window.supabase.createClient)throw new Error('Biblioteca Supabase indisponível.');
+   if(!window.__artistFactoryAuthClient)window.__artistFactoryAuthClient=window.supabase.createClient('https://czznvsojcdwvfngjifov.supabase.co','sb_publishable_WTO7uCkL-CvV9sRQq_T_ng_VYOpy-Gg');
+   const email=document.getElementById('factoryEmail').value.trim(),password=document.getElementById('factoryPassword').value;
+   if(!email||!password)throw new Error('Preenche o email e a palavra-passe.');
+   setMsg('A validar credenciais…');
+   const {data,error}=await window.__artistFactoryAuthClient.auth.signInWithPassword({email,password});
+   if(error)throw error;
+   setMsg('Sessão iniciada: '+data.user.email+'. Já podes analisar a imagem.');
+   document.getElementById('factoryLogin').style.display='none';
+   document.getElementById('factoryLogout').style.display='inline-block';
+   document.getElementById('analyseInspiration').disabled=false;
+  }catch(err){setMsg('Falha no início de sessão: '+(err.message||String(err)));}
+  finally{login.disabled=false;}
+ },true);
+ const logout=document.getElementById('factoryLogout');
+ if(logout)logout.addEventListener('click',async function(ev){ev.preventDefault();try{await window.__artistFactoryAuthClient.auth.signOut();setMsg('Sessão terminada.');document.getElementById('factoryLogin').style.display='inline-block';logout.style.display='none';document.getElementById('analyseInspiration').disabled=true;}catch(e){setMsg('Erro ao terminar sessão: '+e.message);}},true);
+})();
+</script>
+<script>
 const $=id=>document.getElementById(id);let masterFile=null;let projects=JSON.parse(localStorage.getItem('artistFactoryProjectsV3')||'[]');
 $('master').addEventListener('change',e=>{masterFile=e.target.files[0]||null;$('masterState').textContent=masterFile?'Modelo seleccionado: '+masterFile.name+' ('+(masterFile.size/1048576).toFixed(2)+' MB)':'Nenhum ficheiro seleccionado';});
 $('name').addEventListener('input',()=>{if(!$('slug').dataset.edited)$('slug').value=$('name').value.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')});
