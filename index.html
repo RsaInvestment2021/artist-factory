@@ -23,7 +23,7 @@
 <label>Imagem de capa (opcional)</label><input id="hero" type="file" accept="image/png,image/jpeg,image/webp">
 <label>Logótipo (opcional)</label><input id="logo" type="file" accept="image/png,image/jpeg,image/webp">
 <label>Fotografias da galeria do artista *</label><input id="galleryPhotos" type="file" accept="image/png,image/jpeg,image/webp" multiple><p class="muted">Selecciona várias fotografias. Estas substituirão as seis imagens do CHETTCOME na galeria inicial. Máximo 5 MB por fotografia.</p></section></div>
-<section class="card" id="aiDesignCard"><h2>4. Análise de inspiração com IA</h2><p class="muted">Inicia sessão com a conta proprietária do Artist Factory. Carrega uma imagem para a IA analisar o conceito visual completo. A imagem não é publicada no site.</p><label>Email do proprietário</label><input id="factoryEmail" type="email" autocomplete="username" placeholder="Email da conta proprietária"><label>Palavra-passe</label><input id="factoryPassword" type="password" autocomplete="current-password" placeholder="Palavra-passe da conta"><button id="factoryLogin">Iniciar sessão</button><button class="secondary" id="factoryLogout" style="display:none">Terminar sessão</button><p id="factoryAuthState" class="muted">Não autenticado.</p><label>Imagem de inspiração (PNG, JPG ou WEBP; máximo 5 MB)</label><input id="inspirationImage" type="file" accept="image/png,image/jpeg,image/webp"><button id="analyseInspiration" disabled>Analisar imagem com IA</button><div id="aiDesignStatus" class="status" style="display:none"></div></section>\n<section class="card"><h2>5. Gerar site independente</h2><p class="muted">O gerador cria um ZIP pronto para revisão e publicação. O projecto Supabase deve ser exclusivo do artista.</p><button id="generate">Gerar ZIP do site</button><button class="secondary" id="export">Exportar configuração JSON</button><div id="status" class="status" style="display:none"></div></section>
+<section class="card" id="aiDesignCard"><h2>4. Análise de inspiração com IA gratuita</h2><p class="muted">A IA corre no teu próprio computador, dentro do navegador. Não exige conta, API key, créditos nem envia a imagem para um serviço de IA. Na primeira utilização descarrega o modelo gratuito (cerca de 150–300 MB), que fica em cache para utilizações seguintes.</p><div class="notice">Modelo open-source SmolVLM-256M · execução local por WebGPU ou CPU (WASM). O desempenho depende do computador.</div><label>Imagem de inspiração (PNG, JPG ou WEBP; máximo 5 MB)</label><input id="inspirationImage" type="file" accept="image/png,image/jpeg,image/webp"><button id="analyseInspiration">Carregar IA gratuita e analisar imagem</button><div id="aiDesignStatus" class="status" style="display:none"></div><div id="aiProgress" class="muted" style="margin-top:8px;white-space:pre-wrap"></div></section>\n<section class="card"><h2>5. Gerar site independente</h2><p class="muted">O gerador cria um ZIP pronto para revisão e publicação. O projecto Supabase deve ser exclusivo do artista.</p><button id="generate">Gerar ZIP do site</button><button class="secondary" id="export">Exportar configuração JSON</button><div id="status" class="status" style="display:none"></div></section>
 <section class="card"><h2>Artistas registados neste navegador</h2><div id="projects" class="muted">Ainda não existem registos.</div><button class="secondary" id="exportAll">Exportar lista de artistas</button></section>
 </main><div class="footer">Artist Factory · O CHETTCOME V12 original nunca é alterado. Cada geração cria uma cópia independente.</div>
 <script>
@@ -103,15 +103,52 @@ out.file('factory-manifest.json',JSON.stringify({artist_name:c.artist_name,slug:
 $('export').onclick=()=>{try{const c=cfg();validate(c);download(new Blob([JSON.stringify(c,null,2)],{type:'application/json'}),c.slug+'-config.json')}catch(e){$('status').style.display='block';$('status').textContent='ERRO: '+e.message}};
 $('exportAll').onclick=()=>download(new Blob([JSON.stringify(projects,null,2)],{type:'application/json'}),'artist-factory-projects.json');
 
-const FACTORY_SUPABASE_URL='https://czznvsojcdwvfngjifov.supabase.co';
-const FACTORY_SUPABASE_PUBLISHABLE_KEY='sb_publishable_WTO7uCkL-CvV9sRQq_T_ng_VYOpy-Gg';
-const factoryClient=window.supabase.createClient(FACTORY_SUPABASE_URL,FACTORY_SUPABASE_PUBLISHABLE_KEY);
-let factorySession=null;
-async function refreshFactorySession(){const {data}=await factoryClient.auth.getSession();factorySession=data.session;$('factoryAuthState').textContent=factorySession?'Sessão iniciada: '+factorySession.user.email:'Não autenticado.';$('factoryLogin').style.display=factorySession?'none':'inline-block';$('factoryLogout').style.display=factorySession?'inline-block':'none';$('analyseInspiration').disabled=!factorySession;}
-$('factoryLogin').onclick=async()=>{const s=$('factoryAuthState');s.textContent='A iniciar sessão…';const {data,error}=await factoryClient.auth.signInWithPassword({email:$('factoryEmail').value.trim(),password:$('factoryPassword').value});if(error){s.textContent='Erro de autenticação: '+error.message;return;}factorySession=data.session;await refreshFactorySession();};
-$('factoryLogout').onclick=async()=>{await factoryClient.auth.signOut();factorySession=null;await refreshFactorySession();};
-factoryClient.auth.onAuthStateChange((_event,session)=>{factorySession=session;$('factoryAuthState').textContent=session?'Sessão iniciada: '+session.user.email:'Não autenticado.';$('factoryLogin').style.display=session?'none':'inline-block';$('factoryLogout').style.display=session?'inline-block':'none';$('analyseInspiration').disabled=!session;});
-$('analyseInspiration').onclick=async()=>{const file=$('inspirationImage').files[0],status=$('aiDesignStatus');status.style.display='block';try{if(!factorySession)throw Error('Inicia sessão com a conta proprietária.');if(!file)throw Error('Selecciona uma imagem de inspiração.');if(file.size>5*1024*1024)throw Error('A imagem não pode ultrapassar 5 MB.');if(!['image/png','image/jpeg','image/webp'].includes(file.type))throw Error('Formato não suportado. Usa PNG, JPG ou WEBP.');status.textContent='A enviar imagem para análise…';const image=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(Error('Não foi possível ler a imagem.'));reader.readAsDataURL(file);});const {data,error}=await factoryClient.functions.invoke('analyse-brand-image',{body:{image}});if(error)throw Error(error.message||'Falha ao chamar a função.');if(data?.error)throw Error(data.error);const d=data.design||{},p=d.palette||{},t=d.typography||{};const setColor=(id,v)=>{if(typeof v==='string'&&/^#[0-9a-fA-F]{6}$/.test(v))$(id).value=v;};setColor('bg',p.bg);setColor('panel',p.panel);setColor('accent',p.accent);setColor('secondary',p.secondary);const font=(t.body||t.heading||'').toLowerCase();if(font.includes('manrope'))$('font').value='Manrope';else if(font.includes('dm sans'))$('font').value='DM Sans';else if(font.includes('georgia'))$('font').value='Georgia';else if(font.includes('arial'))$('font').value='Arial';$('notes').value='ANÁLISE IA — '+(d.concept||'')+'\nAmbiente: '+(d.mood||'')+'\nTipografia: '+JSON.stringify(t)+'\nComponentes: '+JSON.stringify(d.components||{})+'\nLayout: '+(d.layout||'')+'\nTexturas e formas: '+(d.texture_and_shapes||'')+'\nAcessibilidade: '+JSON.stringify(d.accessibility_notes||'')+'\nOrientações CSS: '+JSON.stringify(d.css_guidance||'');status.textContent='Análise concluída. Paleta e orientações visuais aplicadas ao formulário. Revê os campos antes de gerar o site.';}catch(e){status.textContent='ERRO: '+e.message;}};
-refreshFactorySession();
 function renderProjects(){$('projects').innerHTML=projects.length?projects.map(p=>'<div class="project"><div><b>'+p.name.replace(/[&<>"]/g,'')+'</b><small>'+p.slug+' · '+new Date(p.created).toLocaleDateString('pt-PT')+'</small></div><span class="tag">Registado</span></div>').join(''):'Ainda não existem registos.'}renderProjects();
+</script><script type="module">
+import { AutoProcessor, AutoModelForVision2Seq, RawImage } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.2';
+const $ = id => document.getElementById(id);
+const MODEL_ID = 'HuggingFaceTB/SmolVLM-256M-Instruct';
+let processor=null, model=null, modelDevice='', busy=false;
+function aiStatus(message){$('aiDesignStatus').style.display='block';$('aiDesignStatus').textContent=message;}
+function aiProgress(message){$('aiProgress').textContent=message;}
+async function loadLocalModel(){
+ if(model&&processor)return;
+ const devices=['webgpu','wasm']; let lastError=null;
+ for(const device of devices){
+  try{
+   aiProgress('A preparar o modelo gratuito ('+device.toUpperCase()+'). Na primeira utilização serão descarregados os ficheiros do modelo. Mantém esta página aberta.');
+   processor=await AutoProcessor.from_pretrained(MODEL_ID,{progress_callback:info=>{if(info.status==='progress'||info.status==='downloading')aiProgress('A descarregar modelo gratuito… '+(info.file||info.name||''));}});
+   model=await AutoModelForVision2Seq.from_pretrained(MODEL_ID,{dtype:'q4',device,progress_callback:info=>{if(info.status==='progress'||info.status==='downloading')aiProgress('A descarregar modelo gratuito… '+(info.file||info.name||''));}});
+   modelDevice=device;return;
+  }catch(err){lastError=err;console.warn('Falha ao carregar modelo em '+device,err);processor=null;model=null;}
+ }
+ throw new Error('Não foi possível executar o modelo neste navegador/computador. '+(lastError?.message||'Verifica memória e compatibilidade WebGPU/WASM.'));
+}
+function readDataUrl(file){return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=()=>reject(new Error('Não foi possível ler a imagem.'));r.readAsDataURL(file);});}
+function hex(r,g,b){return '#'+[r,g,b].map(v=>Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,'0')).join('');}
+function imagePalette(file){
+ return new Promise((resolve,reject)=>{const url=URL.createObjectURL(file),img=new Image();img.onload=()=>{try{const c=document.createElement('canvas'),ctx=c.getContext('2d',{willReadFrequently:true});c.width=96;c.height=96;ctx.drawImage(img,0,0,96,96);const px=ctx.getImageData(0,0,96,96).data,hist=new Map();for(let i=0;i<px.length;i+=16){if(px[i+3]<180)continue;const r=Math.round(px[i]/32)*32,g=Math.round(px[i+1]/32)*32,b=Math.round(px[i+2]/32)*32,k=hex(r,g,b);hist.set(k,(hist.get(k)||0)+1);}const colors=[...hist.entries()].sort((a,b)=>b[1]-a[1]).slice(0,16).map(x=>x[0]);const lum=x=>{const n=x.slice(1);const a=[0,2,4].map(i=>parseInt(n.slice(i,i+2),16)/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);return .2126*a[0]+.7152*a[1]+.0722*a[2];};const sat=x=>{const a=[0,2,4].map(i=>parseInt(x.slice(1).slice(i,i+2),16)/255);return Math.max(...a)-Math.min(...a);};const sorted=[...colors].sort((a,b)=>lum(a)-lum(b));const bg=sorted[0]||'#10151d',panel=sorted[Math.min(1,sorted.length-1)]||'#1b2633',accent=[...colors].sort((a,b)=>sat(b)-sat(a))[0]||'#10b981',secondary=sorted[sorted.length-1]||'#d6a85f';URL.revokeObjectURL(url);resolve({bg,panel,accent,secondary});}catch(e){URL.revokeObjectURL(url);reject(e);}};img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('Imagem inválida.'));};img.src=url;});
+}
+$('analyseInspiration').addEventListener('click',async()=>{
+ if(busy)return;const file=$('inspirationImage').files[0];if(!file){aiStatus('Selecciona primeiro uma imagem.');return;}if(file.size>5*1024*1024){aiStatus('A imagem não pode ultrapassar 5 MB.');return;}if(!['image/png','image/jpeg','image/webp'].includes(file.type)){aiStatus('Formato não suportado. Usa PNG, JPG ou WEBP.');return;}
+ busy=true;$('analyseInspiration').disabled=true;
+ try{
+  aiStatus('A iniciar análise local gratuita…');await loadLocalModel();
+  aiProgress('Modelo carregado em '+modelDevice.toUpperCase()+'. A preparar imagem…');
+  const dataUrl=await readDataUrl(file),image=await RawImage.fromURL(dataUrl);
+  const messages=[{role:'user',content:[{type:'image'},{type:'text',text:'You are a professional web art director. Carefully analyse this reference image as visual inspiration for an independent music artist website. Describe in Portuguese: overall visual concept and mood; composition and visual hierarchy; likely background and panel treatment; typography character; header and navigation style; hero section; cards and buttons; spacing, shapes, textures and decorative elements. Be concrete and concise. Do not suggest removing any existing website feature, section, link, form, button or behaviour. This is only a visual redesign reference.'}]}];
+  const textInput=processor.apply_chat_template(messages,{tokenize:false,add_generation_prompt:true});
+  const inputs=await processor(textInput,[image],{return_tensors:'pt'});
+  const output=await model.generate({...inputs,max_new_tokens:220,do_sample:false});
+  const inputLen=inputs.input_ids.dims[1],newTokens=output.slice(null,[inputLen,null]);
+  const decoded=await processor.batch_decode(newTokens,{skip_special_tokens:true});
+  const palette=await imagePalette(file);
+  for(const id of ['bg','panel','accent','secondary'])$(id).value=palette[id];
+  const analysis=Array.isArray(decoded)?decoded[0]:String(decoded);
+  $('notes').value='ANÁLISE VISUAL LOCAL — SmolVLM\n'+analysis+'\n\nPaleta extraída directamente da imagem: '+JSON.stringify(palette)+'\n\nRegra: aplicar esta identidade visual sem remover nem alterar funcionalidades, secções, links, formulários ou comportamentos existentes.';
+  aiStatus('Análise concluída localmente. Paleta visual aplicada. Motor: '+modelDevice.toUpperCase()+'. Nenhuma API paga foi utilizada.');
+  aiProgress('Modelo guardado na cache do navegador. Nas próximas utilizações, o carregamento será mais rápido.');
+ }catch(err){console.error(err);aiStatus('Não foi possível concluir a análise local: '+(err.message||String(err)));aiProgress('Não foi enviada nenhuma imagem para uma API paga.');}
+ finally{busy=false;$('analyseInspiration').disabled=false;}
+});
 </script></body></html>
